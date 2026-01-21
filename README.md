@@ -8,26 +8,85 @@ Notify task completion, errors, and review requests from multiple AI coding sess
 
 - 🎨 Rich embed notifications with color coding
 - ✅ Success (green), ❌ Error (red), ⚠️ Warning (yellow), ℹ️ Info (blue)
-- 🏷️ Project tagging
+- 🏷️ Project name as bot username
 - 📢 Optional @here mentions
-- 🔧 CLI and programmatic API
+- 🤖 AI-powered task summary (Ollama / Anthropic)
+- 🔗 Claude Code Hooks integration
+- 🚀 Auto-start Ollama when needed
 
 ## Installation
 
 ```bash
-npm install task-ping
+git clone https://github.com/krtw00/task-ping.git
+cd task-ping
+npm install
+npm run build
+npm link  # Install globally
 ```
 
 ## Setup
 
-1. Create a Discord bot at [Discord Developer Portal](https://discord.com/developers/applications)
-2. Get your bot token and channel ID
-3. Create `.env` file:
+### 1. Create Discord Webhook
 
-```env
-DISCORD_TOKEN=your-bot-token
-DISCORD_CHANNEL_ID=your-channel-id
-PROJECT_NAME=MyProject  # optional
+1. Open Discord channel settings → Integrations → Webhooks
+2. Create new webhook → Copy URL
+
+### 2. Configure Environment
+
+Create wrapper script at `~/.claude/hooks/task-ping-notify.sh`:
+
+```bash
+#!/bin/bash
+export DISCORD_WEBHOOK_URL="your-webhook-url"
+export SUMMARY_BACKEND="ollama"  # or "anthropic"
+export OLLAMA_MODEL="llama3.2"
+
+task-ping-hook
+```
+
+```bash
+chmod +x ~/.claude/hooks/task-ping-notify.sh
+```
+
+### 3. Configure Claude Code Hooks
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/task-ping-notify.sh 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 4. Install Ollama (for local summarization)
+
+```bash
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull llama3.2
+sudo systemctl enable ollama  # Auto-start on boot
+```
+
+## How It Works
+
+```
+Claude Code completes response
+    ↓ Stop event
+~/.claude/hooks/task-ping-notify.sh
+    ↓
+task-ping-hook
+    ↓ (Auto-starts Ollama if needed)
+Summarize with LLM → Discord notification
 ```
 
 ## CLI Usage
@@ -50,31 +109,16 @@ task-ping -T "Custom Title" "Message here"
 ## Programmatic Usage
 
 ```typescript
-import { TaskPing, sendNotification } from 'task-ping';
+import { sendNotification } from 'task-ping';
 
-// One-off notification
 await sendNotification(
-  {
-    token: process.env.DISCORD_TOKEN,
-    channelId: process.env.DISCORD_CHANNEL_ID,
-  },
+  { webhookUrl: process.env.DISCORD_WEBHOOK_URL },
   {
     type: 'success',
     message: 'Build completed!',
     project: 'MyProject',
   }
 );
-
-// Persistent client (for multiple notifications)
-const client = new TaskPing({
-  token: process.env.DISCORD_TOKEN,
-  channelId: process.env.DISCORD_CHANNEL_ID,
-  project: 'MyProject',
-});
-
-await client.notify({ type: 'info', message: 'Starting build...' });
-await client.notify({ type: 'success', message: 'Build completed!' });
-await client.disconnect();
 ```
 
 ## Notification Types
@@ -90,9 +134,12 @@ await client.disconnect();
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DISCORD_TOKEN` | Yes | Discord bot token |
-| `DISCORD_CHANNEL_ID` | Yes | Default channel for notifications |
-| `PROJECT_NAME` | No | Default project name for tagging |
+| `DISCORD_WEBHOOK_URL` | Yes | Discord webhook URL |
+| `PROJECT_NAME` | No | Default project name (auto-detected from directory) |
+| `SUMMARY_BACKEND` | No | `ollama` (default) or `anthropic` |
+| `OLLAMA_URL` | No | Ollama API URL (default: `http://localhost:11434`) |
+| `OLLAMA_MODEL` | No | Ollama model (default: `llama3.2`) |
+| `ANTHROPIC_API_KEY` | No | Required if using Anthropic backend |
 
 ## License
 
