@@ -1,0 +1,36 @@
+{
+  "name": "task-ping",
+  "version": "0.1.0",
+  "description": "AI development notification bot for parallel workflows",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "task-ping": "dist/cli.js",
+    "task-ping-hook": "dist/hook-handler.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "discord",
+    "notification",
+    "ai",
+    "developer-tools",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
