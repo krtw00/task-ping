@@ -1,44 +1,44 @@
 # TaskPing
 
-AI development notification bot for parallel workflows.
+並列AI開発ワークフローのための通知Bot。
 
-Notify task completion, errors, and review requests from multiple AI coding sessions (Claude Code, Codex, etc.) to Discord.
+複数のAIコーディングセッション（Claude Code、Codex等）からタスク完了、エラー、レビュー依頼をDiscordに通知する。
 
-## Features
+## 機能
 
-- 🎨 Rich embed notifications with color coding
-- ✅ Success (green), ❌ Error (red), ⚠️ Warning (yellow), ℹ️ Info (blue)
-- 🏷️ Project name as bot username
-- 📢 Optional @here mentions
-- 🤖 AI-powered task summary (Ollama / Anthropic)
-- 🔗 Claude Code Hooks integration
-- 🚀 Auto-start Ollama when needed
+- 🎨 リッチ通知（Embed形式、色分け）
+- ✅ 成功（緑）、❌ エラー（赤）、⚠️ 警告（黄）、ℹ️ 情報（青）
+- 🏷️ プロジェクト名をBot名として表示
+- 📢 @here メンション対応
+- 🤖 AI要約機能（Ollama / Anthropic）
+- 🔗 Claude Code Hooks連携
+- 🚀 Ollama自動起動
 
-## Installation
+## インストール
 
 ```bash
 git clone https://github.com/krtw00/task-ping.git
 cd task-ping
 npm install
 npm run build
-npm link  # Install globally
+npm link  # グローバルインストール
 ```
 
-## Setup
+## セットアップ
 
-### 1. Create Discord Webhook
+### 1. Discord Webhookの作成
 
-1. Open Discord channel settings → Integrations → Webhooks
-2. Create new webhook → Copy URL
+1. Discordチャンネル設定 → 連携サービス → Webhook
+2. 新しいウェブフック → URLをコピー
 
-### 2. Configure Environment
+### 2. 環境設定
 
-Create wrapper script at `~/.claude/hooks/task-ping-notify.sh`:
+ラッパースクリプトを作成: `~/.claude/hooks/task-ping-notify.sh`
 
 ```bash
 #!/bin/bash
 export DISCORD_WEBHOOK_URL="your-webhook-url"
-export SUMMARY_BACKEND="ollama"  # or "anthropic"
+export SUMMARY_BACKEND="ollama"  # または "anthropic"
 export OLLAMA_MODEL="llama3.2"
 
 task-ping-hook
@@ -48,9 +48,9 @@ task-ping-hook
 chmod +x ~/.claude/hooks/task-ping-notify.sh
 ```
 
-### 3. Configure Claude Code Hooks
+### 3. Claude Code Hooks設定
 
-Add to `~/.claude/settings.json`:
+`~/.claude/settings.json` に追加:
 
 ```json
 {
@@ -69,44 +69,44 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-### 4. Install Ollama (for local summarization)
+### 4. Ollamaのインストール（ローカル要約用）
 
 ```bash
 curl -fsSL https://ollama.ai/install.sh | sh
 ollama pull llama3.2
-sudo systemctl enable ollama  # Auto-start on boot
+sudo systemctl enable ollama  # 自動起動
 ```
 
-## How It Works
+## 動作の仕組み
 
 ```
-Claude Code completes response
-    ↓ Stop event
+Claude Codeがレスポンス完了
+    ↓ Stopイベント
 ~/.claude/hooks/task-ping-notify.sh
     ↓
 task-ping-hook
-    ↓ (Auto-starts Ollama if needed)
-Summarize with LLM → Discord notification
+    ↓ (必要に応じてOllama自動起動)
+LLMで要約生成 → Discord通知
 ```
 
-## CLI Usage
+## CLI使用方法
 
 ```bash
-# Basic notification
-task-ping "Build completed"
+# 基本的な通知
+task-ping "ビルド完了"
 
-# Typed notifications
-task-ping --success "All tests passed"
-task-ping --error "Build failed"
-task-ping --warning "Review requested"
+# タイプ指定通知
+task-ping --success "全テスト合格"
+task-ping --error "ビルド失敗"
+task-ping --warning "レビュー依頼"
 
-# With options
-task-ping -t success -p AgentMine "Feature implemented"
-task-ping --error --mention "Critical failure!"
-task-ping -T "Custom Title" "Message here"
+# オプション付き
+task-ping -t success -p AgentMine "機能実装完了"
+task-ping --error --mention "重大な障害!"
+task-ping -T "カスタムタイトル" "メッセージ"
 ```
 
-## Programmatic Usage
+## プログラムからの使用
 
 ```typescript
 import { sendNotification } from 'task-ping';
@@ -115,32 +115,36 @@ await sendNotification(
   { webhookUrl: process.env.DISCORD_WEBHOOK_URL },
   {
     type: 'success',
-    message: 'Build completed!',
+    message: 'ビルド完了!',
     project: 'MyProject',
   }
 );
 ```
 
-## Notification Types
+## 通知タイプ
 
-| Type | Color | Default Title | Use Case |
-|------|-------|---------------|----------|
-| `success` | 🟢 Green | ✅ Task Completed | Task finished successfully |
-| `error` | 🔴 Red | ❌ Error | Failures, exceptions |
-| `warning` | 🟡 Yellow | ⚠️ Attention Required | Review requests, warnings |
-| `info` | 🔵 Blue | ℹ️ Info | General information |
+| タイプ | 色 | デフォルトタイトル | 用途 |
+|--------|-----|-------------------|------|
+| `success` | 🟢 緑 | ✅ Task Completed | タスク正常完了 |
+| `error` | 🔴 赤 | ❌ Error | 失敗、例外 |
+| `warning` | 🟡 黄 | ⚠️ Attention Required | レビュー依頼、警告 |
+| `info` | 🔵 青 | ℹ️ Info | 一般情報 |
 
-## Environment Variables
+## 環境変数
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DISCORD_WEBHOOK_URL` | Yes | Discord webhook URL |
-| `PROJECT_NAME` | No | Default project name (auto-detected from directory) |
-| `SUMMARY_BACKEND` | No | `ollama` (default) or `anthropic` |
-| `OLLAMA_URL` | No | Ollama API URL (default: `http://localhost:11434`) |
-| `OLLAMA_MODEL` | No | Ollama model (default: `llama3.2`) |
-| `ANTHROPIC_API_KEY` | No | Required if using Anthropic backend |
+| 変数 | 必須 | 説明 |
+|------|------|------|
+| `DISCORD_WEBHOOK_URL` | Yes | Discord Webhook URL |
+| `PROJECT_NAME` | No | プロジェクト名（未指定時はディレクトリ名） |
+| `SUMMARY_BACKEND` | No | `ollama`（デフォルト）または `anthropic` |
+| `OLLAMA_URL` | No | Ollama API URL（デフォルト: `http://localhost:11434`） |
+| `OLLAMA_MODEL` | No | Ollamaモデル（デフォルト: `llama3.2`） |
+| `ANTHROPIC_API_KEY` | No | Anthropicバックエンド使用時に必要 |
 
-## License
+## ドキュメント
+
+詳細は [docs/](./docs/) を参照。
+
+## ライセンス
 
 MIT
