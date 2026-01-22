@@ -63,14 +63,17 @@ async function ensureOllamaRunning(url: string): Promise<void> {
   await startOllama();
 }
 
-const SUMMARY_PROMPT = `以下の会話から、AIが行った作業を20文字以内で要約してください。日本語で、体言止めで答えてください。
+const SUMMARY_PROMPT = `以下のユーザー依頼を20文字以内で要約してください。
+日本語で、体言止めで答えてください。
+依頼内容の核心だけを簡潔に表現してください。
 
 例：
-- "Webhook通知機能の実装"
-- "バグ修正とテスト追加"
-- "READMEの更新"
+- "npm linkパスの修正"
+- "ログイン画面のバグ修正"
+- "READMEの日本語化"
+- "通知機能の改善"
 
-会話内容:
+ユーザー依頼:
 `;
 
 /**
@@ -173,11 +176,147 @@ export async function summarize(
 }
 
 /**
- * Extract recent conversation from transcript file
+ * Stop reason types
+ */
+export type StopReason =
+  | 'command_approval'    // Bash等のコマンド承認待ち
+  | 'question'            // ユーザーへの質問待ち
+  | 'input'               // 通常の入力待ち
+  | 'edit_approval'       // ファイル編集の承認待ち
+  | 'error';              // エラー発生
+
+/**
+ * Title mapping for stop reasons
+ */
+export const STOP_REASON_TITLES: Record<StopReason, string> = {
+  command_approval: 'コマンド承認待ち',
+  question: '確認待ち',
+  input: '入力待ち',
+  edit_approval: '編集承認待ち',
+  error: 'エラー発生',
+};
+
+/**
+ * Detect stop reason from transcript
+ */
+export async function detectStopReason(
+  transcriptPath: string
+): Promise<StopReason> {
+  const fs = await import('fs/promises');
+
+  try {
+    const content = await fs.readFile(transcriptPath, 'utf-8');
+    const lines = content.trim().split('\n');
+
+    // Check last few entries for tool usage or questions
+    const recentLines = lines.slice(-10);
+
+    for (let i = recentLines.length - 1; i >= 0; i--) {
+      try {
+        const parsed = JSON.parse(recentLines[i]);
+
+        // Check assistant messages for tool use or text content
+        if (parsed.type === 'assistant' && Array.isArray(parsed.message)) {
+          for (const item of parsed.message) {
+            if (item && typeof item === 'object' && 'type' in item) {
+              // Check for tool use that requires approval
+              if (item.type === 'tool_use' && 'name' in item) {
+                const toolName = String(item.name);
+                if (toolName === 'Bash') {
+                  return 'command_approval';
+                }
+                if (toolName === 'Edit' || toolName === 'Write') {
+                  return 'edit_approval';
+                }
+                if (toolName === 'AskUserQuestion') {
+                  return 'question';
+                }
+              }
+
+              // Check text content for question patterns
+              if (item.type === 'text' && 'text' in item) {
+                const msg = String(item.text);
+                if (msg.includes('?') && (
+                  msg.includes('どうしますか') ||
+                  msg.includes('よろしいですか') ||
+                  msg.includes('確認') ||
+                  msg.includes('選択')
+                )) {
+                  return 'question';
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Skip invalid lines
+      }
+    }
+
+    return 'input';
+  } catch (error) {
+    console.error('Failed to detect stop reason:', error);
+    return 'input';
+  }
+}
+
+/**
+ * Extract text content from Claude Code transcript message format
+ * Handles multiple formats:
+ * - String: "message"
+ * - Object with string content: {role: "user", content: "message"}
+ * - Object with array content: {type: "message", content: [{type: "text", text: "..."}]}
+ * - Array with text items: [{type: "text", text: "message"}]
+ */
+function extractTextFromMessage(message: unknown): string {
+  if (typeof message === 'string') {
+    return message;
+  }
+
+  if (message && typeof message === 'object') {
+    const msg = message as Record<string, unknown>;
+
+    // Handle {role: "user", content: "string"} format
+    if ('content' in msg && typeof msg.content === 'string') {
+      return msg.content;
+    }
+
+    // Handle {type: "message", content: [...]} format (assistant messages)
+    if ('content' in msg && Array.isArray(msg.content)) {
+      return extractTextFromArray(msg.content);
+    }
+
+    // Handle direct array format [{type: "text", text: "..."}]
+    if (Array.isArray(message)) {
+      return extractTextFromArray(message);
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Extract text from an array of content items
+ */
+function extractTextFromArray(items: unknown[]): string {
+  for (const item of items) {
+    if (item && typeof item === 'object' && 'type' in item) {
+      const typedItem = item as Record<string, unknown>;
+      if (typedItem.type === 'text' && 'text' in typedItem) {
+        return String(typedItem.text);
+      }
+    }
+  }
+  return '';
+}
+
+/**
+ * Extract the latest assistant response from transcript file
+ * Returns what the AI actually did/said (not tool calls)
  */
 export async function extractRecentConversation(
   transcriptPath: string,
-  maxMessages: number = 5
+  _maxMessages: number = 5
 ): Promise<string> {
   const fs = await import('fs/promises');
 
@@ -185,29 +324,26 @@ export async function extractRecentConversation(
     const content = await fs.readFile(transcriptPath, 'utf-8');
     const lines = content.trim().split('\n');
 
-    // Parse JSONL and get last N messages
-    const messages: Array<{ role: string; content: string }> = [];
+    let latestAssistantMessage: string | null = null;
 
-    for (const line of lines.slice(-maxMessages * 2)) {
+    // Find the latest meaningful assistant text message
+    for (const line of lines) {
       try {
         const parsed = JSON.parse(line);
-        if (parsed.type === 'human' || parsed.type === 'assistant') {
-          const role = parsed.type === 'human' ? 'User' : 'Assistant';
-          const text = typeof parsed.message === 'string'
-            ? parsed.message
-            : JSON.stringify(parsed.message).slice(0, 200);
-          messages.push({ role, content: text });
+
+        if (parsed.type === 'assistant') {
+          const text = extractTextFromMessage(parsed.message);
+          // Skip very short messages
+          if (text && text.length > 15) {
+            latestAssistantMessage = text;
+          }
         }
       } catch {
         // Skip invalid lines
       }
     }
 
-    // Format as conversation
-    return messages
-      .slice(-maxMessages)
-      .map(m => `${m.role}: ${m.content}`)
-      .join('\n');
+    return latestAssistantMessage ? latestAssistantMessage.slice(0, 300) : '';
   } catch (error) {
     console.error('Failed to read transcript:', error);
     return '';

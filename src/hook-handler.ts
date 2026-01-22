@@ -6,7 +6,7 @@
 
 import { config } from 'dotenv';
 import { sendNotification } from './notifier.js';
-import { summarize, extractRecentConversation } from './summarizer.js';
+import { extractRecentConversation, detectStopReason, STOP_REASON_TITLES } from './summarizer.js';
 
 config();
 
@@ -39,22 +39,26 @@ async function main(): Promise<void> {
   // Get project name from current directory
   const projectName = process.env.PROJECT_NAME || process.cwd().split('/').pop() || 'Unknown';
 
-  // Extract and summarize conversation
-  let summary = '作業完了';
+  // Extract first user request and detect stop reason
+  let message = '作業中';
+  let title = '入力待ち';
+
   if (hookData.transcript_path) {
     try {
-      const conversation = await extractRecentConversation(hookData.transcript_path);
-      if (conversation) {
-        const backend = (process.env.SUMMARY_BACKEND || 'ollama') as 'ollama' | 'anthropic';
-        summary = await summarize(conversation, {
-          backend,
-          ollamaUrl: process.env.OLLAMA_URL,
-          ollamaModel: process.env.OLLAMA_MODEL,
-          anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-        });
+      // Detect stop reason for appropriate title
+      const stopReason = await detectStopReason(hookData.transcript_path);
+      title = STOP_REASON_TITLES[stopReason];
+
+      // Get first user request (no summarization, show actual request)
+      const userRequest = await extractRecentConversation(hookData.transcript_path);
+      if (userRequest) {
+        // Truncate if too long, but keep enough context
+        message = userRequest.length > 200
+          ? userRequest.slice(0, 200) + '...'
+          : userRequest;
       }
     } catch (error) {
-      console.error('Summary failed:', error);
+      console.error('Failed to extract context:', error);
     }
   }
 
@@ -62,9 +66,9 @@ async function main(): Promise<void> {
   try {
     await sendNotification(
       { webhookUrl, project: projectName },
-      { type: 'info', message: summary, title: '入力待ち' }
+      { type: 'info', message, title }
     );
-    console.log('✓ Notification sent');
+    console.log(`✓ Notification sent (${title})`);
   } catch (error) {
     console.error('Notification failed:', error);
     process.exit(1);

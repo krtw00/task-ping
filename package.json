@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "bin": {
     "task-ping": "dist/cli.js",
-    "task-ping-hook": "dist/hook-handler.js"
+    "task-ping-hook": "dist/hook-handler.js",
+    "task-ping-permission": "dist/permission-handler.js"
   },
   "scripts": {
     "build": "tsc",
